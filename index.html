@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="it-IT">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Scosse in Campania - INGV</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIINfQ3L5Aqks4m2JweqHHF9oBWMNCXfbA0="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <style>
+    :root {
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #14213d;
+      background: #f5f7fb;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    header {
+      padding: 24px;
+      background: linear-gradient(135deg, #14213d, #2f6690);
+      color: white;
+    }
+
+    header h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.8rem, 4vw, 3rem);
+    }
+
+    header p {
+      margin: 0;
+      max-width: 880px;
+      line-height: 1.5;
+      opacity: 0.92;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 720px);
+      justify-content: center;
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .panel, .map-card {
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 14px 34px rgba(20, 33, 61, 0.10);
+      overflow: hidden;
+    }
+
+    .panel {
+      padding: 18px;
+    }
+
+    /* La mappa resta nel DOM e viene inizializzata, ma non viene mostrata. */
+    .map-card {
+      position: fixed;
+      left: -200vw;
+      top: -200vh;
+      width: 720px;
+      height: 520px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .controls {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    input, button {
+      border: 1px solid #dce3ee;
+      border-radius: 12px;
+      padding: 11px 12px;
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      background: #fca311;
+      color: #14213d;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+
+    button.secondary {
+      background: #edf6f9;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(0.98);
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 14px;
+      background: #edf6f9;
+      font-size: 0.92rem;
+      line-height: 1.45;
+      margin-bottom: 14px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      background: #f5f7fb;
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.25rem;
+    }
+
+    .stat span {
+      color: #617089;
+      font-size: 0.78rem;
+    }
+
+    #events {
+      display: grid;
+      gap: 10px;
+      max-height: 53vh;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .event {
+      border: 1px solid #e7edf5;
+      border-radius: 16px;
+      padding: 12px;
+      cursor: pointer;
+    }
+
+    .event:hover, .event.new-event {
+      border-color: #fca311;
+    }
+
+    .event.new-event {
+      background: #fff8ea;
+    }
+
+    .event-title {
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+
+    .event-meta {
+      display: grid;
+      gap: 4px;
+      color: #617089;
+      font-size: 0.88rem;
+    }
+
+    #map {
+      height: 520px;
+      width: 720px;
+    }
+
+    .legend {
+      padding: 12px 14px;
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(20, 33, 61, 0.16);
+      line-height: 1.4;
+      font-size: 0.86rem;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Scosse di terremoto in Campania</h1>
+    <p>
+      Applicazione web che interroga il servizio FDSN Event di INGV e mostra gli eventi sismici
+      ricadenti in Campania, con filtri per periodo e magnitudo minima.
+    </p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="controls">
+        <label>
+          Dal
+          <input id="startDate" type="date" lang="it-IT" />
+        </label>
+        <label>
+          Al
+          <input id="endDate" type="date" lang="it-IT" />
+        </label>
+        <label>
+          Magnitudo minima
+          <input id="minMag" type="number" step="0.1" min="0" value="0" />
+        </label>
+        <label>
+          Controllo ogni minuti
+          <input id="pollMinutes" type="number" min="1" step="1" value="2" />
+        </label>
+        <button id="loadBtn">Recupera dati da INGV</button>
+        <button id="notifyBtn" class="secondary">Abilita notifiche</button>
+        <button id="watchBtn">Avvia controllo</button>
+      </div>
+
+      <div id="status" class="status">Imposto automaticamente gli ultimi 30 giorni.</div>
+
+      <div class="stats">
+        <div class="stat"><strong id="count">0</strong><span>eventi</span></div>
+        <div class="stat"><strong id="maxMag">-</strong><span>max ML/Mw</span></div>
+        <div class="stat"><strong id="lastEvent">-</strong><span>ultimo</span></div>
+      </div>
+
+      <div id="events"></div>
+    </section>
+
+    <section class="map-card" aria-hidden="true">
+      <div id="map"></div>
+    </section>
+  </main>
+
+  <script>
+    const INGV_ENDPOINT = "https://webservices.ingv.it/fdsnws/event/1/query";
+
+    // Bounding box ampia usata per non perdere eventi vicino ai confini regionali.
+    const CAMPANIA_BBOX = {
+      minlatitude: 39.85,
+      maxlatitude: 41.65,
+      minlongitude: 13.65,
+      maxlongitude: 15.95,
+    };
+
+    // Poligono semplificato della Campania per filtrare lato client dopo la query bbox.
+    // Coordinate: [lat, lon]. Per usi istituzionali sostituire con GeoJSON ISTAT ufficiale.
+    const CAMPANIA_POLYGON = [
+      [41.50, 14.00], [41.48, 14.55], [41.36, 15.10], [41.20, 15.55],
+      [40.95, 15.80], [40.70, 15.68], [40.48, 15.34], [40.16, 15.20],
+      [39.98, 15.05], [40.03, 14.72], [40.25, 14.40], [40.42, 14.05],
+      [40.70, 13.78], [41.05, 13.72], [41.32, 13.86], [41.50, 14.00]
+    ];
+
+    const map = L.map("map").setView([40.85, 14.65], 8);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    L.polygon(CAMPANIA_POLYGON, {
+      color: "#2f6690",
+      weight: 2,
+      fillOpacity: 0.06
+    }).addTo(map).bindPopup("Filtro geografico Campania, poligono semplificato");
+
+    const markers = L.layerGroup().addTo(map);
+
+    const els = {
+      startDate: document.querySelector("#startDate"),
+      endDate: document.querySelector("#endDate"),
+      minMag: document.querySelector("#minMag"),
+      pollMinutes: document.querySelector("#pollMinutes"),
+      loadBtn: document.querySelector("#loadBtn"),
+      notifyBtn: document.querySelector("#notifyBtn"),
+      watchBtn: document.querySelector("#watchBtn"),
+      status: document.querySelector("#status"),
+      events: document.querySelector("#events"),
+      count: document.querySelector("#count"),
+      maxMag: document.querySelector("#maxMag"),
+      lastEvent: document.querySelector("#lastEvent"),
+    };
+
+    let knownEventIds = new Set(JSON.parse(localStorage.getItem("knownEventIds") || "[]"));
+    let pollTimer = null;
+
+    function initDates() {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 30);
+      els.startDate.value = start.toISOString().slice(0, 10);
+      els.endDate.value = end.toISOString().slice(0, 10);
+    }
+
+    function pointInPolygon(lat, lon, polygon) {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const yi = polygon[i][0], xi = polygon[i][1];
+        const yj = polygon[j][0], xj = polygon[j][1];
+        const intersect = ((yi > lat) !== (yj > lat)) &&
+          (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function buildUrl() {
+      const params = new URLSearchParams({
+        starttime: els.startDate.value,
+        endtime: els.endDate.value,
+        minmagnitude: els.minMag.value || "0",
+        format: "text",
+        orderby: "time-asc",
+        ...CAMPANIA_BBOX,
+      });
+      return `${INGV_ENDPOINT}?${params.toString()}`;
+    }
+
+    function parseFdsnText(text) {
+      const lines = text
+        .trim()
+        .split("\n")
+        .filter(line => line && !line.startsWith("#"));
+
+      return lines.map(line => {
+        const [eventId, time, latitude, longitude, depthKm, author, catalog, contributor,
+          contributorId, magType, magnitude, magAuthor, eventLocationName] = line.split("|");
+
+        return {
+          eventId,
+          time,
+          latitude: Number(latitude),
+          longitude: Number(longitude),
+          depthKm: Number(depthKm),
+          magType,
+          magnitude: Number(magnitude),
+          eventLocationName: eventLocationName || "Località non disponibile",
+        };
+      }).filter(e => Number.isFinite(e.latitude) && Number.isFinite(e.longitude));
+    }
+
+    function formatDateTime(value) {
+      return new Intl.DateTimeFormat("it-IT", {
+        dateStyle: "short",
+        timeStyle: "medium",
+      }).format(new Date(value));
+    }
+
+    function markerRadius(magnitude) {
+      if (!Number.isFinite(magnitude)) return 5;
+      return Math.max(5, Math.min(22, 5 + magnitude * 4));
+    }
+
+    function canUseNotifications() {
+      return "Notification" in window;
+    }
+
+    async function requestNotifications() {
+      if (!canUseNotifications()) {
+        els.status.textContent = "Questo browser non supporta le notifiche web.";
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      els.status.textContent = permission === "granted"
+        ? "Notifiche abilitate. Tieni la pagina aperta per ricevere gli avvisi."
+        : "Notifiche non abilitate: il browser o il sistema le ha bloccate.";
+    }
+
+    function notifyNewEvent(event) {
+      const title = `Nuova scossa in Campania: M ${Number.isFinite(event.magnitude) ? event.magnitude.toFixed(1) : "n.d."}`;
+      const body = `${event.eventLocationName}\n${formatDateTime(event.time)} - profondità ${Number.isFinite(event.depthKm) ? event.depthKm.toFixed(1) : "n.d."} km`;
+
+      if (canUseNotifications() && Notification.permission === "granted") {
+        new Notification(title, { body, tag: event.eventId });
+      } else {
+        alert(`${title}\n${body}`);
+      }
+    }
+
+    function render(events, newIds = new Set()) {
+      markers.clearLayers();
+      els.events.innerHTML = "";
+      els.count.textContent = events.length;
+      els.maxMag.textContent = events.length ? Math.max(...events.map(e => e.magnitude || 0)).toFixed(1) : "-";
+      els.lastEvent.textContent = events.length ? formatDateTime(events[events.length - 1].time).split(",")[0] : "-";
+
+      if (!events.length) {
+        els.events.innerHTML = `<div class="status">Nessuna scossa trovata con questi filtri.</div>`;
+        return;
+      }
+
+      const bounds = [];
+      [...events].reverse().forEach(event => {
+        const marker = L.circleMarker([event.latitude, event.longitude], {
+          radius: markerRadius(event.magnitude),
+          weight: 2,
+          fillOpacity: 0.55,
+        }).addTo(markers);
+
+        marker.bindPopup(`
+          <strong>${event.eventLocationName}</strong><br>
+          ${formatDateTime(event.time)}<br>
+          Magnitudo ${event.magType || "M"} ${Number.isFinite(event.magnitude) ? event.magnitude.toFixed(1) : "n.d."}<br>
+          Profondità ${Number.isFinite(event.depthKm) ? event.depthKm.toFixed(1) : "n.d."} km<br>
+          ID evento: ${event.eventId}
+        `);
+
+        bounds.push([event.latitude, event.longitude]);
+
+        const card = document.createElement("article");
+        card.className = `event ${newIds.has(event.eventId) ? "new-event" : ""}`;
+        card.innerHTML = `
+          <div class="event-title">${event.eventLocationName}</div>
+          <div class="event-meta">
+            <span>${formatDateTime(event.time)}</span>
+            <span>Magnitudo ${event.magType || "M"} ${Number.isFinite(event.magnitude) ? event.magnitude.toFixed(1) : "n.d."}</span>
+            <span>Profondità: ${Number.isFinite(event.depthKm) ? event.depthKm.toFixed(1) : "n.d."} km</span>
+            <span>ID evento: ${event.eventId}</span>
+          </div>
+        `;
+        card.addEventListener("click", () => {
+          map.setView([event.latitude, event.longitude], 11);
+          marker.openPopup();
+        });
+        els.events.appendChild(card);
+      });
+
+      if (bounds.length) map.fitBounds(bounds, { padding: [36, 36] });
+    }
+
+    async function loadEarthquakes({ notify = false } = {}) {
+      els.status.textContent = "Recupero dati da INGV...";
+      els.loadBtn.disabled = true;
+
+      try {
+        const response = await fetch(buildUrl(), { headers: { "Accept": "text/plain" } });
+        if (!response.ok) throw new Error(`Errore INGV ${response.status}`);
+        const text = await response.text();
+
+        const allEvents = parseFdsnText(text);
+        const campaniaEvents = allEvents.filter(e => pointInPolygon(e.latitude, e.longitude, CAMPANIA_POLYGON));
+        const newEvents = campaniaEvents.filter(e => !knownEventIds.has(e.eventId));
+        const newIds = new Set(newEvents.map(e => e.eventId));
+
+        if (notify && newEvents.length) {
+          newEvents.forEach(notifyNewEvent);
+        }
+
+        campaniaEvents.forEach(e => knownEventIds.add(e.eventId));
+        localStorage.setItem("knownEventIds", JSON.stringify([...knownEventIds].slice(-500)));
+
+        render(campaniaEvents, newIds);
+        els.status.textContent = `Dati caricati. Query INGV su bounding box: ${allEvents.length} eventi; filtrati in Campania: ${campaniaEvents.length}; nuovi: ${newEvents.length}.`;
+      } catch (error) {
+        console.error(error);
+        els.status.innerHTML = `
+          Impossibile recuperare i dati dal browser. Possibili cause: CORS, rete, data non valida o indisponibilità temporanea del servizio INGV.<br>
+          Dettaglio: <strong>${error.message}</strong><br><br>
+          Soluzione consigliata in produzione: chiamare INGV da un backend/proxy Node, PHP, Python o serverless.
+        `;
+        render([]);
+      } finally {
+        els.loadBtn.disabled = false;
+      }
+    }
+
+    function startWatching() {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        els.watchBtn.textContent = "Avvia controllo";
+        els.status.textContent = "Controllo periodico fermato.";
+        return;
+      }
+
+      const minutes = Math.max(1, Number(els.pollMinutes.value || 2));
+      pollTimer = setInterval(() => loadEarthquakes({ notify: true }), minutes * 60 * 1000);
+      els.watchBtn.textContent = "Ferma controllo";
+      els.status.textContent = `Controllo periodico avviato ogni ${minutes} minuti. Tieni la pagina aperta.`;
+      loadEarthquakes({ notify: false });
+    }
+
+    const legend = L.control({ position: "bottomright" });
+    legend.onAdd = () => {
+      const div = L.DomUtil.create("div", "legend");
+      div.innerHTML = "<strong>Legenda</strong><br>Dimensione cerchio proporzionale alla magnitudo";
+      return div;
+    };
+    legend.addTo(map);
+
+    els.loadBtn.addEventListener("click", () => loadEarthquakes({ notify: false }));
+    els.notifyBtn.addEventListener("click", requestNotifications);
+    els.watchBtn.addEventListener("click", startWatching);
+    initDates();
+    loadEarthquakes({ notify: false });
+  </script>
+</body>
+</html>
